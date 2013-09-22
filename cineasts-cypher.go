@@ -72,6 +72,39 @@ func safe(s string) string {
 	return re.ReplaceAllString(s, "_")
 }
 
+func inList(x int64, l []int64) bool {
+	for _, item := range l {
+		if item == x {
+			return true
+		}
+	}
+	return false
+}
+
+func getBorn(p PersonType) int {
+	if len(p.Birthday) > 4 {
+		born, _ := strconv.Atoi(p.Birthday[0:4])
+		return born
+	}
+	return 0
+}
+
+func getDied(p PersonType) int {
+	if len(p.Deathday) > 4 {
+		died, _ := strconv.Atoi(p.Deathday[0:4])
+		return died
+	}
+	return 0
+}
+
+func makeCharsString(char string) string {
+	chars := make([]string, 0)
+	for _, c := range strings.Split(char, "/") {
+		chars = append(chars, quotes(strings.TrimSpace(c)))
+	}
+	return strings.Join(chars, ",")
+}
+
 func (m MovieType) printMovieCypher() {
 	if len(m.ReleaseDate) < 4 {
 		return
@@ -80,28 +113,48 @@ func (m MovieType) printMovieCypher() {
 	if err != nil {
 		log.Println(err)
 	}
-	fmt.Printf("MERGE (movie:Movie {id:%d, title:%s, release:%d, tagline:%s})\n",
-		m.Id, quotes(m.Title), release, quotes(m.Tagline))
+	fmt.Printf("MERGE (movie:Movie {id:%d})\n", m.Id)
+	fmt.Printf("  ON CREATE movie SET movie.title = %s\n", quotes(m.Title))
+	fmt.Printf("    , movie.release = %d\n", release)
+	if len(m.Tagline) > 0 {
+		fmt.Printf("    , movie.tagline = %s\n", quotes(m.Tagline))
+	}
+	var actors = make([]int64, 0)
 	for _, a := range m.Casts.Cast {
 		actor := getPerson(a.Id)
 		if len(actor.Name) > 0 && len(actor.Birthday) > 4 && len(strings.Trim(safe(a.Name), "_")) > 0 {
-			born, _ := strconv.Atoi(actor.Birthday[0:4])
-			fmt.Printf("  MERGE (%s:Person {id:%d, name:%s, born:%d})\n",
-				safe(actor.Name), actor.Id, quotes(actor.Name), born)
-			fmt.Printf("  SET %s:Actor\n", safe(actor.Name))
-			chars2 := make([]string, 0)
-			for _, c := range strings.Split(a.Character, "/") {
-				chars2 = append(chars2, quotes(strings.TrimSpace(c)))
+			if !inList(actor.Id, actors) {
+				fmt.Printf("  MERGE (%s:Person {id:%d})\n",
+					safe(actor.Name), actor.Id)
+				born := getBorn(actor)
+				died := getDied(actor)
+				fmt.Printf("  ON CREATE %s SET %s.name = %s\n",
+					safe(actor.Name), safe(actor.Name), quotes(actor.Name))
+				if born > 0 {
+					fmt.Printf("    , %s.born = %d\n", safe(actor.Name), born)
+				}
+				if died > 0 {
+					fmt.Printf("    , %s.died = %d\n", safe(actor.Name), died)
+				}
+				fmt.Printf("  SET %s:Actor\n", safe(actor.Name))
+				chars := makeCharsString(a.Character)
+				fmt.Printf("  CREATE UNIQUE %s-[%s_act:ACTED_IN]->movie\n",
+					safe(actor.Name), safe(actor.Name))
+				fmt.Printf("  SET %s_act.roles = [%s]\n", safe(actor.Name), chars)
+				actors = append(actors, actor.Id)
+			} else {
+				chars := makeCharsString(a.Character)
+				fmt.Printf("  SET %s_act.roles = filter(x in %s_act.roles where not(x in([%s]))) + [%s]\n",
+					safe(actor.Name), safe(actor.Name), chars, chars)
 			}
-			chars := strings.Join(chars2, ",")
-			fmt.Printf("  CREATE UNIQUE %s-[:ACTED_IN {roles:[%s]}]->movie\n", safe(actor.Name), chars)
 		}
 	}
 	for _, d := range m.Casts.Crew {
 		if d.Job == "Director" {
 			director := getPerson(d.Id)
-			if len(director.Name) > 0 && len(director.Birthday) > 4 && len(strings.Trim(safe(d.Name), "_")) > 0 {
-				born, _ := strconv.Atoi(director.Birthday[0:4])
+			if len(strings.Trim(safe(d.Name), "_")) > 0 {
+				born := getBorn(director)
+				died := getDied(director)
 				found := false
 				for _, a := range m.Casts.Cast {
 					if a.Id == d.Id {
@@ -109,8 +162,15 @@ func (m MovieType) printMovieCypher() {
 					}
 				}
 				if !found {
-					fmt.Printf("  MERGE (%s:Person {id:%d, name:\"%s\", born:%d})\n",
-						safe(director.Name), director.Id, director.Name, born)
+					fmt.Printf("  MERGE (%s:Person {id:%d})\n", safe(director.Name), director.Id)
+					fmt.Printf("  ON CREATE %s SET %s.name = %s\n",
+						safe(director.Name), safe(director.Name), quotes(director.Name))
+					if born > 0 {
+						fmt.Printf("    , %s.born = %d\n", safe(director.Name), born)
+					}
+					if died > 0 {
+						fmt.Printf("    , %s.died = %d\n", safe(director.Name), died)
+					}
 				}
 				fmt.Printf("  SET %s:Director\n", safe(director.Name))
 				fmt.Printf("  CREATE UNIQUE %s-[:DIRECTED]->movie\n", safe(director.Name))
@@ -185,11 +245,11 @@ func discoverMovies(pageNum int) {
 
 func main() {
 	flag.Parse()
-   if strings.EqualFold(*apikey, "..") {
-     fmt.Println("you must specify an API key")
-     flag.PrintDefaults()
-     return
-   }
+	if strings.EqualFold(*apikey, "..") {
+		fmt.Println("you must specify an API key")
+		flag.PrintDefaults()
+		return
+	}
 	for i := 1; i < 6712; i++ {
 		discoverMovies(i)
 	}
