@@ -250,6 +250,12 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
+   fmt.Println("CREATE INDEX on :Movie(id);")
+   fmt.Println("CREATE INDEX on :Movie(title);")
+   fmt.Println("CREATE INDEX on :Person(id);")
+   fmt.Println("CREATE INDEX on :Person(name);")
+   fmt.Println("CREATE INDEX on :Actor(id);")
+   fmt.Println("CREATE INDEX on :Actor(name);")
 	for i := 1; i < 6712; i++ {
 		discoverMovies(i)
 	}
