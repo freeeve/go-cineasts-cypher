@@ -256,6 +256,8 @@ func main() {
    fmt.Println("CREATE INDEX on :Person(name);")
    fmt.Println("CREATE INDEX on :Actor(id);")
    fmt.Println("CREATE INDEX on :Actor(name);")
+   fmt.Println("CREATE INDEX on :Director(id);")
+   fmt.Println("CREATE INDEX on :Director(name);")
 	for i := 1; i < 6712; i++ {
 		discoverMovies(i)
 	}
