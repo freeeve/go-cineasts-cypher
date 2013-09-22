@@ -155,13 +155,7 @@ func (m MovieType) printMovieCypher() {
 			if len(strings.Trim(safe(d.Name), "_")) > 0 {
 				born := getBorn(director)
 				died := getDied(director)
-				found := false
-				for _, a := range m.Casts.Cast {
-					if a.Id == d.Id {
-						found = true
-					}
-				}
-				if !found {
+				if !inList(d.Id, actors) {
 					fmt.Printf("  MERGE (%s:Person {id:%d})\n", safe(director.Name), director.Id)
 					fmt.Printf("  ON CREATE %s SET %s.name = %s\n",
 						safe(director.Name), safe(director.Name), quotes(director.Name))
@@ -171,6 +165,7 @@ func (m MovieType) printMovieCypher() {
 					if died > 0 {
 						fmt.Printf("    , %s.died = %d\n", safe(director.Name), died)
 					}
+               actors = append(actors, d.Id)
 				}
 				fmt.Printf("  SET %s:Director\n", safe(director.Name))
 				fmt.Printf("  CREATE UNIQUE %s-[:DIRECTED]->movie\n", safe(director.Name))
