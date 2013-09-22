@@ -1,6 +1,8 @@
 go-cineasts-cypher
 ==================
 
+Assumes you're going to import to 2.0-M06.
+
 Usage:
 
 ```shell
