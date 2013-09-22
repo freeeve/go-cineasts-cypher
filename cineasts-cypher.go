@@ -16,6 +16,7 @@ import (
 var apikey = flag.String("apikey", "..", "apikey from themoviedb.org")
 var delayFlag = flag.Int("delay", 350, "delay between requests, to avoid rate limit blocks")
 var delay, _ = time.ParseDuration(fmt.Sprintf("%dms", *delayFlag))
+// TODO add votecount filter option
 
 type DiscoverPage struct {
 	Page         int64       `json:"page"`
@@ -156,6 +157,8 @@ func (m MovieType) printMovieCypher() {
 				born := getBorn(director)
 				died := getDied(director)
 				if !inList(d.Id, actors) {
+              // TODO make sure safe(director.Name) hasn't been used already
+              // some people have the same name acting/directing in the same movie
 					fmt.Printf("  MERGE (%s:Person {id:%d})\n", safe(director.Name), director.Id)
 					fmt.Printf("  ON CREATE %s SET %s.name = %s\n",
 						safe(director.Name), safe(director.Name), quotes(director.Name))
@@ -216,7 +219,7 @@ func getMovie(m int64) MovieType {
 func discoverMovies(pageNum int) {
 	time.Sleep(delay)
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&append_to_response=casts", pageNum, *apikey), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=10", pageNum, *apikey), nil)
 	req.Header.Add("Accept", "application/json")
 	res, err := client.Do(req)
 	if err != nil {
@@ -253,7 +256,7 @@ func main() {
    fmt.Println("CREATE INDEX on :Actor(name);")
    fmt.Println("CREATE INDEX on :Director(id);")
    fmt.Println("CREATE INDEX on :Director(name);")
-	for i := 1; i < 6712; i++ {
+	for i := 1; i <= 214; i++ {
 		discoverMovies(i)
 	}
 }
