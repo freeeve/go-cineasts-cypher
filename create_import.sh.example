@@ -1,0 +1,2 @@
+#!/bin/bash
+go run cineasts-cypher.go -apikey=... > cineasts.cyp
