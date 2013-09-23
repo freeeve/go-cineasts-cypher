@@ -16,7 +16,7 @@ import (
 var apikey = flag.String("apikey", "..", "apikey from themoviedb.org")
 var delayFlag = flag.Int("delay", 350, "delay between requests, to avoid rate limit blocks")
 var delay, _ = time.ParseDuration(fmt.Sprintf("%dms", *delayFlag))
-// TODO add votecount filter option
+var votecount = flag.Int("votecount", 10, "minimum votecount, used to filter out lesser-known films")
 
 type DiscoverPage struct {
 	Page         int64       `json:"page"`
@@ -73,6 +73,11 @@ func safe(s string) string {
 	return re.ReplaceAllString(s, "_")
 }
 
+func safeWithReplace(s string, replace string) string {
+	re := regexp.MustCompile("[^a-zA-Z]")
+	return re.ReplaceAllString(s, replace)
+}
+
 func inList(x int64, l []int64) bool {
 	for _, item := range l {
 		if item == x {
@@ -120,6 +125,9 @@ func (m MovieType) printMovieCypher() {
 	if len(m.Tagline) > 0 {
 		fmt.Printf("    , movie.tagline = %s\n", quotes(m.Tagline))
 	}
+	for _, genre := range m.Genres {
+		fmt.Printf("    , movie:%s\n", safeWithReplace(genre.Name, ""))
+	}
 	var actors = make([]int64, 0)
 	for _, a := range m.Casts.Cast {
 		actor := getPerson(a.Id)
@@ -139,7 +147,7 @@ func (m MovieType) printMovieCypher() {
 				}
 				fmt.Printf("  SET %s:Actor\n", safe(actor.Name))
 				chars := makeCharsString(a.Character)
-				fmt.Printf("  CREATE UNIQUE %s-[%s_act:ACTED_IN]->movie\n",
+				fmt.Printf("  CREATE UNIQUE (%s)-[%s_act:ACTED_IN]->(movie)\n",
 					safe(actor.Name), safe(actor.Name))
 				fmt.Printf("  SET %s_act.roles = [%s]\n", safe(actor.Name), chars)
 				actors = append(actors, actor.Id)
@@ -157,8 +165,8 @@ func (m MovieType) printMovieCypher() {
 				born := getBorn(director)
 				died := getDied(director)
 				if !inList(d.Id, actors) {
-              // TODO make sure safe(director.Name) hasn't been used already
-              // some people have the same name acting/directing in the same movie
+					// TODO make sure safe(director.Name) hasn't been used already
+					// some people have the same name acting/directing in the same movie
 					fmt.Printf("  MERGE (%s:Person {id:%d})\n", safe(director.Name), director.Id)
 					fmt.Printf("  ON CREATE %s SET %s.name = %s\n",
 						safe(director.Name), safe(director.Name), quotes(director.Name))
@@ -168,10 +176,10 @@ func (m MovieType) printMovieCypher() {
 					if died > 0 {
 						fmt.Printf("    , %s.died = %d\n", safe(director.Name), died)
 					}
-               actors = append(actors, d.Id)
+					actors = append(actors, d.Id)
 				}
 				fmt.Printf("  SET %s:Director\n", safe(director.Name))
-				fmt.Printf("  CREATE UNIQUE %s-[:DIRECTED]->movie\n", safe(director.Name))
+				fmt.Printf("  CREATE UNIQUE (%s)-[:DIRECTED]->(movie)\n", safe(director.Name))
 			}
 		}
 	}
@@ -216,10 +224,12 @@ func getMovie(m int64) MovieType {
 	return movie
 }
 
-func discoverMovies(pageNum int) {
+func discoverMovies(pageNum int64) {
 	time.Sleep(delay)
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=10", pageNum, *apikey), nil)
+	req, err := http.NewRequest("GET",
+		fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
+			pageNum, *apikey, *votecount), nil)
 	req.Header.Add("Accept", "application/json")
 	res, err := client.Do(req)
 	if err != nil {
@@ -238,7 +248,9 @@ func discoverMovies(pageNum int) {
 			m.printMovieCypher()
 		}
 	}
-
+	if pageNum < page.TotalPages {
+		discoverMovies(pageNum + 1)
+	}
 }
 
 func main() {
@@ -248,15 +260,9 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
-   fmt.Println("CREATE INDEX on :Movie(id);")
-   fmt.Println("CREATE INDEX on :Movie(title);")
-   fmt.Println("CREATE INDEX on :Person(id);")
-   fmt.Println("CREATE INDEX on :Person(name);")
-   fmt.Println("CREATE INDEX on :Actor(id);")
-   fmt.Println("CREATE INDEX on :Actor(name);")
-   fmt.Println("CREATE INDEX on :Director(id);")
-   fmt.Println("CREATE INDEX on :Director(name);")
-	for i := 1; i <= 214; i++ {
-		discoverMovies(i)
-	}
+	fmt.Println("CREATE INDEX on :Movie(id);")
+	fmt.Println("CREATE INDEX on :Movie(title);")
+	fmt.Println("CREATE INDEX on :Person(id);")
+	fmt.Println("CREATE INDEX on :Person(name);")
+	discoverMovies(1)
 }
