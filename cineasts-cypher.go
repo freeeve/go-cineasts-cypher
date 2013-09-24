@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/md5"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -103,6 +106,12 @@ func getDied(p PersonType) int {
 	return 0
 }
 
+func getMD5(s string) string {
+	h := md5.New()
+	io.WriteString(h, s)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 func makeCharsString(char string) string {
 	chars := make([]string, 0)
 	for _, c := range strings.Split(char, "/") {
@@ -187,21 +196,20 @@ func (m MovieType) printMovieCypher() {
 }
 
 func getPerson(m int64) PersonType {
-	time.Sleep(delay)
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://api.themoviedb.org/3/person/%d?api_key=%s", m, *apikey), nil)
-	req.Header.Add("Accept", "application/json")
-	res, err := client.Do(req)
+	url := fmt.Sprintf("http://api.themoviedb.org/3/person/%d?api_key=%s", m, *apikey)
+	body, err := ioutil.ReadFile(getMD5(url))
 	if err != nil {
-		log.Fatal(err)
+		time.Sleep(delay)
+		client := &http.Client{}
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Add("Accept", "application/json")
+		res, _ := client.Do(req)
+		body, _ = ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		ioutil.WriteFile(getMD5(url), body, 0644)
 	}
-	body, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
 	var person PersonType
 	json.Unmarshal(body, &person)
-	if err != nil {
-		log.Fatal(err)
-	}
 	return person
 }
 
@@ -211,45 +219,34 @@ func getMovie(m int64) MovieType {
 	if err != nil {
 		time.Sleep(delay)
 		client := &http.Client{}
-		req, err := http.NewRequest("GET", url, nil)
+		req, _ := http.NewRequest("GET", url, nil)
 		req.Header.Add("Accept", "application/json")
-		res, err := client.Do(req)
-		if err != nil {
-			log.Fatal(err)
-		}
-		body, err = ioutil.ReadAll(res.Body)
-		if err != nil {
-			log.Fatal(err)
-		}
+		res, _ := client.Do(req)
+		body, _ = ioutil.ReadAll(res.Body)
 		res.Body.Close()
 		ioutil.WriteFile(getMD5(url), body, 0644)
 	}
 	var movie MovieType
 	json.Unmarshal(body, &movie)
-	if err != nil {
-		log.Fatal(err)
-	}
 	return movie
 }
 
 func discoverMovies(pageNum int64) {
-	time.Sleep(delay)
-	client := &http.Client{}
-	req, err := http.NewRequest("GET",
-		fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
-			pageNum, *apikey, *votecount), nil)
-	req.Header.Add("Accept", "application/json")
-	res, err := client.Do(req)
+  url := fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
+			pageNum, *apikey, *votecount)
+	body, err := ioutil.ReadFile(getMD5(url))
 	if err != nil {
-		log.Fatal(err)
+		time.Sleep(delay)
+		client := &http.Client{}
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Add("Accept", "application/json")
+		res, _ := client.Do(req)
+		body, _ = ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		ioutil.WriteFile(getMD5(url), body, 0644)
 	}
-	body, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
 	var page DiscoverPage
 	json.Unmarshal(body, &page)
-	if err != nil {
-		log.Fatal(err)
-	}
 	for _, movie := range page.Results {
 		m := getMovie(movie.Id)
 		if len(m.Casts.Cast) > 0 && len(m.Casts.Crew) > 0 {
@@ -268,7 +265,7 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
-	os.MkDir("cache", 0755)
+	os.Mkdir("cache", 0755)
 	fmt.Println("CREATE INDEX on :Movie(id);")
 	fmt.Println("CREATE INDEX on :Movie(title);")
 	fmt.Println("CREATE INDEX on :Person(id);")
