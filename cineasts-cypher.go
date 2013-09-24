@@ -14,11 +14,13 @@ import (
 	"time"
 )
 
+// command-line flags and related vars
 var apikey = flag.String("apikey", "..", "apikey from themoviedb.org")
 var delayFlag = flag.Int("delay", 350, "delay between requests, to avoid rate limit blocks")
-var delay, _ = time.ParseDuration(fmt.Sprintf("%dms", *delayFlag))
+var delay time.Duration
 var votecount = flag.Int("votecount", 10, "minimum votecount, used to filter out lesser-known films")
 
+// JSON structs--only have the data I care about
 type DiscoverPage struct {
 	Page         int64       `json:"page"`
 	Results      []MovieType `json:"results"`
@@ -64,21 +66,24 @@ type PersonType struct {
 	Deathday string `json:"deathday"`
 }
 
+// wrap a string in quotes, and escape the quotes inside
 func quotes(s string) string {
 	re := regexp.MustCompile("\"")
 	return "\"" + re.ReplaceAllString(s, "\\\"") + "\""
 }
 
+// convert non alpha chars to underscores... for use as identifiers in Cypher
 func safe(s string) string {
-	re := regexp.MustCompile("[^a-zA-Z]")
-	return re.ReplaceAllString(s, "_")
+	return safeWithRreplace(s, "_")
 }
 
+// convert non alpha chars to something
 func safeWithReplace(s string, replace string) string {
 	re := regexp.MustCompile("[^a-zA-Z]")
 	return re.ReplaceAllString(s, replace)
 }
 
+// is an int in a slice
 func inList(x int64, l []int64) bool {
 	for _, item := range l {
 		if item == x {
@@ -88,6 +93,7 @@ func inList(x int64, l []int64) bool {
 	return false
 }
 
+// get the born year out of a date string
 func getBorn(p PersonType) int {
 	if len(p.Birthday) > 4 {
 		born, _ := strconv.Atoi(p.Birthday[0:4])
@@ -96,6 +102,7 @@ func getBorn(p PersonType) int {
 	return 0
 }
 
+// get the died year out of a date string (TODO make it so this is not so redundant to the above)
 func getDied(p PersonType) int {
 	if len(p.Deathday) > 4 {
 		died, _ := strconv.Atoi(p.Deathday[0:4])
@@ -104,11 +111,14 @@ func getDied(p PersonType) int {
 	return 0
 }
 
+// strip out slashes so the URL can be saved as a filename
 func getFileSafe(s string) string {
 	re := regexp.MustCompile(fmt.Sprintf("/|%s", *apikey))
 	return re.ReplaceAllString(s, "_")
 }
 
+// create a list of character strings like:
+// "Big Momma", "Malcolm Turner"
 func makeCharsString(char string) string {
 	chars := make([]string, 0)
 	for _, c := range strings.Split(char, "/") {
@@ -117,6 +127,7 @@ func makeCharsString(char string) string {
 	return strings.Join(chars, ",")
 }
 
+// generate a cypher create statement for a movie and everything that is connected
 func (m MovieType) printMovieCypher() {
 	if len(m.ReleaseDate) < 4 {
 		return
@@ -192,6 +203,7 @@ func (m MovieType) printMovieCypher() {
 	fmt.Println(";")
 }
 
+// get this URL from our cache or call the API and cache the response
 func getCacheOrRequest(url string) []byte {
 	body, err := ioutil.ReadFile(getFileSafe(url))
 	if err != nil {
@@ -204,9 +216,10 @@ func getCacheOrRequest(url string) []byte {
 		res.Body.Close()
 		ioutil.WriteFile(getFileSafe(url), body, 0644)
 	}
-   return body
+	return body
 }
 
+// the person API call
 func getPerson(m int64) PersonType {
 	url := fmt.Sprintf("http://api.themoviedb.org/3/person/%d?api_key=%s", m, *apikey)
 	body := getCacheOrRequest(url)
@@ -215,6 +228,7 @@ func getPerson(m int64) PersonType {
 	return person
 }
 
+// the movie API call
 func getMovie(m int64) MovieType {
 	url := fmt.Sprintf("http://api.themoviedb.org/3/movie/%d?api_key=%s&append_to_response=casts", m, *apikey)
 	body := getCacheOrRequest(url)
@@ -223,6 +237,7 @@ func getMovie(m int64) MovieType {
 	return movie
 }
 
+// the discover API call (recursive)
 func discoverMovies(pageNum int64) {
 	url := fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
 		pageNum, *apikey, *votecount)
@@ -240,6 +255,7 @@ func discoverMovies(pageNum int64) {
 	}
 }
 
+// create a cache folder and spit out indexes
 func main() {
 	flag.Parse()
 	if strings.EqualFold(*apikey, "..") {
@@ -247,6 +263,7 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
+	delay, _ = time.ParseDuration(fmt.Sprintf("%dms", *delayFlag))
 	os.Mkdir("cache", 0755)
 	os.Chdir("cache")
 	fmt.Println("CREATE INDEX on :Movie(id);")
