@@ -192,8 +192,7 @@ func (m MovieType) printMovieCypher() {
 	fmt.Println(";")
 }
 
-func getPerson(m int64) PersonType {
-	url := fmt.Sprintf("http://api.themoviedb.org/3/person/%d?api_key=%s", m, *apikey)
+func getCacheOrRequest(url string) []byte {
 	body, err := ioutil.ReadFile(getFileSafe(url))
 	if err != nil {
 		time.Sleep(delay)
@@ -205,6 +204,12 @@ func getPerson(m int64) PersonType {
 		res.Body.Close()
 		ioutil.WriteFile(getFileSafe(url), body, 0644)
 	}
+   return body
+}
+
+func getPerson(m int64) PersonType {
+	url := fmt.Sprintf("http://api.themoviedb.org/3/person/%d?api_key=%s", m, *apikey)
+	body := getCacheOrRequest(url)
 	var person PersonType
 	json.Unmarshal(body, &person)
 	return person
@@ -212,36 +217,16 @@ func getPerson(m int64) PersonType {
 
 func getMovie(m int64) MovieType {
 	url := fmt.Sprintf("http://api.themoviedb.org/3/movie/%d?api_key=%s&append_to_response=casts", m, *apikey)
-	body, err := ioutil.ReadFile(getFileSafe(url))
-	if err != nil {
-		time.Sleep(delay)
-		client := &http.Client{}
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Add("Accept", "application/json")
-		res, _ := client.Do(req)
-		body, _ = ioutil.ReadAll(res.Body)
-		res.Body.Close()
-		ioutil.WriteFile(getFileSafe(url), body, 0644)
-	}
+	body := getCacheOrRequest(url)
 	var movie MovieType
 	json.Unmarshal(body, &movie)
 	return movie
 }
 
 func discoverMovies(pageNum int64) {
-  url := fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
-			pageNum, *apikey, *votecount)
-	body, err := ioutil.ReadFile(getFileSafe(url))
-	if err != nil {
-		time.Sleep(delay)
-		client := &http.Client{}
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Add("Accept", "application/json")
-		res, _ := client.Do(req)
-		body, _ = ioutil.ReadAll(res.Body)
-		res.Body.Close()
-		ioutil.WriteFile(getFileSafe(url), body, 0644)
-	}
+	url := fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
+		pageNum, *apikey, *votecount)
+	body := getCacheOrRequest(url)
 	var page DiscoverPage
 	json.Unmarshal(body, &page)
 	for _, movie := range page.Results {
@@ -263,7 +248,7 @@ func main() {
 		return
 	}
 	os.Mkdir("cache", 0755)
-   os.Chdir("cache")
+	os.Chdir("cache")
 	fmt.Println("CREATE INDEX on :Movie(id);")
 	fmt.Println("CREATE INDEX on :Movie(title);")
 	fmt.Println("CREATE INDEX on :Person(id);")
