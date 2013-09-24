@@ -206,16 +206,24 @@ func getPerson(m int64) PersonType {
 }
 
 func getMovie(m int64) MovieType {
-	time.Sleep(delay)
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://api.themoviedb.org/3/movie/%d?api_key=%s&append_to_response=casts", m, *apikey), nil)
-	req.Header.Add("Accept", "application/json")
-	res, err := client.Do(req)
+	url := fmt.Sprintf("http://api.themoviedb.org/3/movie/%d?api_key=%s&append_to_response=casts", m, *apikey)
+	body, err := ioutil.ReadFile(getMD5(url))
 	if err != nil {
-		log.Fatal(err)
+		time.Sleep(delay)
+		client := &http.Client{}
+		req, err := http.NewRequest("GET", url, nil)
+		req.Header.Add("Accept", "application/json")
+		res, err := client.Do(req)
+		if err != nil {
+			log.Fatal(err)
+		}
+		body, err = ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+		res.Body.Close()
+		ioutil.WriteFile(getMD5(url), body, 0644)
 	}
-	body, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
 	var movie MovieType
 	json.Unmarshal(body, &movie)
 	if err != nil {
@@ -260,6 +268,7 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
+	os.MkDir("cache", 0755)
 	fmt.Println("CREATE INDEX on :Movie(id);")
 	fmt.Println("CREATE INDEX on :Movie(title);")
 	fmt.Println("CREATE INDEX on :Person(id);")
