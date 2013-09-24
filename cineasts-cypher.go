@@ -1,11 +1,9 @@
 package main
 
 import (
-	"crypto/md5"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -106,10 +104,9 @@ func getDied(p PersonType) int {
 	return 0
 }
 
-func getMD5(s string) string {
-	h := md5.New()
-	io.WriteString(h, s)
-	return fmt.Sprintf("%x", h.Sum(nil))
+func getFileSafe(s string) string {
+	re := regexp.MustCompile(fmt.Sprintf("/|%s", *apikey))
+	return re.ReplaceAllString(s, "_")
 }
 
 func makeCharsString(char string) string {
@@ -197,7 +194,7 @@ func (m MovieType) printMovieCypher() {
 
 func getPerson(m int64) PersonType {
 	url := fmt.Sprintf("http://api.themoviedb.org/3/person/%d?api_key=%s", m, *apikey)
-	body, err := ioutil.ReadFile(getMD5(url))
+	body, err := ioutil.ReadFile(getFileSafe(url))
 	if err != nil {
 		time.Sleep(delay)
 		client := &http.Client{}
@@ -206,7 +203,7 @@ func getPerson(m int64) PersonType {
 		res, _ := client.Do(req)
 		body, _ = ioutil.ReadAll(res.Body)
 		res.Body.Close()
-		ioutil.WriteFile(getMD5(url), body, 0644)
+		ioutil.WriteFile(getFileSafe(url), body, 0644)
 	}
 	var person PersonType
 	json.Unmarshal(body, &person)
@@ -215,7 +212,7 @@ func getPerson(m int64) PersonType {
 
 func getMovie(m int64) MovieType {
 	url := fmt.Sprintf("http://api.themoviedb.org/3/movie/%d?api_key=%s&append_to_response=casts", m, *apikey)
-	body, err := ioutil.ReadFile(getMD5(url))
+	body, err := ioutil.ReadFile(getFileSafe(url))
 	if err != nil {
 		time.Sleep(delay)
 		client := &http.Client{}
@@ -224,7 +221,7 @@ func getMovie(m int64) MovieType {
 		res, _ := client.Do(req)
 		body, _ = ioutil.ReadAll(res.Body)
 		res.Body.Close()
-		ioutil.WriteFile(getMD5(url), body, 0644)
+		ioutil.WriteFile(getFileSafe(url), body, 0644)
 	}
 	var movie MovieType
 	json.Unmarshal(body, &movie)
@@ -234,7 +231,7 @@ func getMovie(m int64) MovieType {
 func discoverMovies(pageNum int64) {
   url := fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
 			pageNum, *apikey, *votecount)
-	body, err := ioutil.ReadFile(getMD5(url))
+	body, err := ioutil.ReadFile(getFileSafe(url))
 	if err != nil {
 		time.Sleep(delay)
 		client := &http.Client{}
@@ -243,7 +240,7 @@ func discoverMovies(pageNum int64) {
 		res, _ := client.Do(req)
 		body, _ = ioutil.ReadAll(res.Body)
 		res.Body.Close()
-		ioutil.WriteFile(getMD5(url), body, 0644)
+		ioutil.WriteFile(getFileSafe(url), body, 0644)
 	}
 	var page DiscoverPage
 	json.Unmarshal(body, &page)
@@ -266,6 +263,7 @@ func main() {
 		return
 	}
 	os.Mkdir("cache", 0755)
+   os.Chdir("cache")
 	fmt.Println("CREATE INDEX on :Movie(id);")
 	fmt.Println("CREATE INDEX on :Movie(title);")
 	fmt.Println("CREATE INDEX on :Person(id);")
