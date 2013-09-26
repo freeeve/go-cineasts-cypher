@@ -74,7 +74,7 @@ func quotes(s string) string {
 
 // convert non alpha chars to underscores... for use as identifiers in Cypher
 func safe(s string) string {
-	return safeWithRreplace(s, "_")
+	return safeWithReplace(s, "_")
 }
 
 // convert non alpha chars to something
