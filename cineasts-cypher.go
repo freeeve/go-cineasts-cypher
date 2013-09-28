@@ -68,8 +68,11 @@ type PersonType struct {
 
 // wrap a string in quotes, and escape the quotes inside
 func quotes(s string) string {
-	re := regexp.MustCompile("\"")
-	return "\"" + re.ReplaceAllString(s, "\\\"") + "\""
+	re := regexp.MustCompile("\\\\")
+	str := re.ReplaceAllString(s, "\\\\")
+	re = regexp.MustCompile("\"")
+	str = re.ReplaceAllString(str, "\\\"")
+	return "\"" + str + "\""
 }
 
 // convert non alpha chars to underscores... for use as identifiers in Cypher
@@ -121,7 +124,7 @@ func getFileSafe(s string) string {
 // "Big Momma", "Malcolm Turner"
 func makeCharsString(char string) string {
 	chars := make([]string, 0)
-	for _, c := range strings.Split(char, "/") {
+	for _, c := range regexp.MustCompile("/|\\\\").Split(char, 100) {
 		chars = append(chars, quotes(strings.TrimSpace(c)))
 	}
 	return strings.Join(chars, ",")
@@ -164,7 +167,7 @@ func (m MovieType) printMovieCypher() {
 				}
 				fmt.Printf("  SET %s:Actor\n", safe(actor.Name))
 				chars := makeCharsString(a.Character)
-				fmt.Printf("  CREATE UNIQUE (%s)-[%s_act:ACTED_IN]->(movie)\n",
+				fmt.Printf("  CREATE UNIQUE (%s)-[%s_act:ACTS_IN]->(movie)\n",
 					safe(actor.Name), safe(actor.Name))
 				fmt.Printf("  SET %s_act.roles = [%s]\n", safe(actor.Name), chars)
 				actors = append(actors, actor.Id)
