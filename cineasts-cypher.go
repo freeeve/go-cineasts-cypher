@@ -35,6 +35,7 @@ type MovieType struct {
 	ReleaseDate string      `json:"release_date"`
 	Genres      []GenreType `json:"genres"`
 	Casts       CastsType   `json:"casts"`
+	VoteAverage float64     `json:"vote_average"`
 }
 
 type GenreType struct {
@@ -140,14 +141,18 @@ func (m MovieType) printMovieCypher() {
 		log.Println(err)
 	}
 	fmt.Printf("MERGE (movie:Movie {id:%d})\n", m.Id)
-	fmt.Printf("  ON CREATE movie SET movie.title = %s\n", quotes(m.Title))
+	fmt.Printf("ON CREATE SET movie.title = %s\n", quotes(m.Title))
 	fmt.Printf("    , movie.release = %d\n", release)
+	if m.VoteAverage > 0 {
+		fmt.Printf("    , movie.voteAverage = %f\n", m.VoteAverage)
+	}
 	if len(m.Tagline) > 0 {
 		fmt.Printf("    , movie.tagline = %s\n", quotes(m.Tagline))
 	}
 	for _, genre := range m.Genres {
 		fmt.Printf("    , movie:%s\n", safeWithReplace(genre.Name, ""))
 	}
+	//   fmt.Printf("RETURN *;\n")
 	var actors = make([]int64, 0)
 	for _, a := range m.Casts.Cast {
 		actor := getPerson(a.Id)
@@ -157,8 +162,8 @@ func (m MovieType) printMovieCypher() {
 					safe(actor.Name), actor.Id)
 				born := getBorn(actor)
 				died := getDied(actor)
-				fmt.Printf("  ON CREATE %s SET %s.name = %s\n",
-					safe(actor.Name), safe(actor.Name), quotes(actor.Name))
+				fmt.Printf("  ON CREATE SET %s.name = %s\n",
+					safe(actor.Name), quotes(actor.Name))
 				if born > 0 {
 					fmt.Printf("    , %s.born = %d\n", safe(actor.Name), born)
 				}
@@ -188,8 +193,8 @@ func (m MovieType) printMovieCypher() {
 					// TODO make sure safe(director.Name) hasn't been used already
 					// some people have the same name acting/directing in the same movie
 					fmt.Printf("  MERGE (%s:Person {id:%d})\n", safe(director.Name), director.Id)
-					fmt.Printf("  ON CREATE %s SET %s.name = %s\n",
-						safe(director.Name), safe(director.Name), quotes(director.Name))
+					fmt.Printf("  ON CREATE SET %s.name = %s\n",
+						safe(director.Name), quotes(director.Name))
 					if born > 0 {
 						fmt.Printf("    , %s.born = %d\n", safe(director.Name), born)
 					}
@@ -203,7 +208,7 @@ func (m MovieType) printMovieCypher() {
 			}
 		}
 	}
-	fmt.Println(";")
+	fmt.Println("RETURN movie.title;")
 }
 
 // get this URL from our cache or call the API and cache the response
@@ -269,9 +274,9 @@ func main() {
 	delay, _ = time.ParseDuration(fmt.Sprintf("%dms", *delayFlag))
 	os.Mkdir("cache", 0755)
 	os.Chdir("cache")
-	fmt.Println("CREATE INDEX on :Movie(id);")
+	// fmt.Println("CREATE CONSTRAINT on (m:Movie) ASSERT m.id IS UNIQUE;")
 	fmt.Println("CREATE INDEX on :Movie(title);")
-	fmt.Println("CREATE INDEX on :Person(id);")
+	//	fmt.Println("CREATE CONSTRAINT on (p:Person) ASSERT p.id IS UNIQUE;")
 	fmt.Println("CREATE INDEX on :Person(name);")
 	discoverMovies(1)
 }
