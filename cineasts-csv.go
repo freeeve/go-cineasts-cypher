@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,7 +17,7 @@ import (
 
 // command-line flags and related vars
 var apikey = flag.String("apikey", "..", "apikey from themoviedb.org")
-var delayFlag = flag.Int("delay", 350, "delay between requests, to avoid rate limit blocks")
+var delayFlag = flag.Int("delay", 300, "delay between requests, to avoid rate limit blocks")
 var delay time.Duration
 var votecount = flag.Int("votecount", 10, "minimum votecount, used to filter out lesser-known films")
 
@@ -126,13 +127,12 @@ func getFileSafe(s string) string {
 func makeCharsString(char string) string {
 	chars := make([]string, 0)
 	for _, c := range regexp.MustCompile("/|\\\\").Split(char, 100) {
-		chars = append(chars, quotes(strings.TrimSpace(c)))
+		chars = append(chars, strings.TrimSpace(c))
 	}
-	return strings.Join(chars, ",")
+	return strings.Join(chars, ":")
 }
 
-// generate a cypher create statement for a movie and everything that is connected
-func (m MovieType) printMovieCypher() {
+func (m MovieType) printMovieCSV(w *csv.Writer) {
 	if len(m.ReleaseDate) < 4 {
 		return
 	}
@@ -140,75 +140,105 @@ func (m MovieType) printMovieCypher() {
 	if err != nil {
 		log.Println(err)
 	}
-	fmt.Printf("MERGE (movie:Movie {id:%d})\n", m.Id)
-	fmt.Printf("ON CREATE SET movie.title = %s\n", quotes(m.Title))
-	fmt.Printf("    , movie.release = %d\n", release)
-	if m.VoteAverage > 0 {
-		fmt.Printf("    , movie.voteAverage = %f\n", m.VoteAverage)
-	}
-	if len(m.Tagline) > 0 {
-		fmt.Printf("    , movie.tagline = %s\n", quotes(m.Tagline))
-	}
+	genres := []string{}
 	for _, genre := range m.Genres {
-		fmt.Printf("    , movie:%s\n", safeWithReplace(genre.Name, ""))
+		genres = append(genres, genre.Name)
 	}
-	//   fmt.Printf("RETURN *;\n")
-	var actors = make([]int64, 0)
+	genreStr := strings.Join(genres, ":")
+	record := []string{}
+	record = append(record, fmt.Sprintf("%d", m.Id))
+	record = append(record, m.Title)
+	record = append(record, fmt.Sprintf("%f", m.VoteAverage))
+	record = append(record, strconv.Itoa(release))
+	record = append(record, m.Tagline)
+	record = append(record, genreStr)
+	err = w.Write(record)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+var personMap = map[int64]bool{}
+
+func (m MovieType) printPeopleCSV(w *csv.Writer) {
+	if len(m.ReleaseDate) < 4 {
+		return
+	}
 	for _, a := range m.Casts.Cast {
 		actor := getPerson(a.Id)
 		if len(actor.Name) > 0 && len(actor.Birthday) > 4 && len(strings.Trim(safe(a.Name), "_")) > 0 {
-			if !inList(actor.Id, actors) {
-				fmt.Printf("  MERGE (%s:Person {id:%d})\n",
-					safe(actor.Name), actor.Id)
-				born := getBorn(actor)
-				died := getDied(actor)
-				fmt.Printf("  ON CREATE SET %s.name = %s\n",
-					safe(actor.Name), quotes(actor.Name))
-				if born > 0 {
-					fmt.Printf("    , %s.born = %d\n", safe(actor.Name), born)
+			born := getBorn(actor)
+			died := getDied(actor)
+			record := []string{}
+			record = append(record, fmt.Sprintf("%d", actor.Id))
+			record = append(record, actor.Name)
+			record = append(record, strconv.Itoa(born))
+			record = append(record, strconv.Itoa(died))
+			if !personMap[actor.Id] {
+				err := w.Write(record)
+				if err != nil {
+					log.Fatal(err)
 				}
-				if died > 0 {
-					fmt.Printf("    , %s.died = %d\n", safe(actor.Name), died)
-				}
-				fmt.Printf("  SET %s:Actor\n", safe(actor.Name))
-				chars := makeCharsString(a.Character)
-				fmt.Printf("  CREATE UNIQUE (%s)-[%s_act:ACTED_IN]->(movie)\n",
-					safe(actor.Name), safe(actor.Name))
-				fmt.Printf("  SET %s_act.roles = [%s]\n", safe(actor.Name), chars)
-				actors = append(actors, actor.Id)
-			} else {
-				chars := makeCharsString(a.Character)
-				fmt.Printf("  SET %s_act.roles = filter(x in %s_act.roles where not(x in([%s]))) + [%s]\n",
-					safe(actor.Name), safe(actor.Name), chars, chars)
+				personMap[actor.Id] = true
 			}
 		}
 	}
 	for _, d := range m.Casts.Crew {
 		if d.Job == "Director" {
 			director := getPerson(d.Id)
-			if len(strings.Trim(safe(d.Name), "_")) > 0 {
-				born := getBorn(director)
-				died := getDied(director)
-				if !inList(d.Id, actors) {
-					// TODO make sure safe(director.Name) hasn't been used already
-					// some people have the same name acting/directing in the same movie
-					fmt.Printf("  MERGE (%s:Person {id:%d})\n", safe(director.Name), director.Id)
-					fmt.Printf("  ON CREATE SET %s.name = %s\n",
-						safe(director.Name), quotes(director.Name))
-					if born > 0 {
-						fmt.Printf("    , %s.born = %d\n", safe(director.Name), born)
-					}
-					if died > 0 {
-						fmt.Printf("    , %s.died = %d\n", safe(director.Name), died)
-					}
-					actors = append(actors, d.Id)
+			born := getBorn(director)
+			died := getDied(director)
+			record := []string{}
+			record = append(record, fmt.Sprintf("%d", director.Id))
+			record = append(record, director.Name)
+			record = append(record, strconv.Itoa(born))
+			record = append(record, strconv.Itoa(died))
+			if !personMap[director.Id] {
+				err := w.Write(record)
+				if err != nil {
+					log.Fatal(err)
 				}
-				fmt.Printf("  SET %s:Director\n", safe(director.Name))
-				fmt.Printf("  CREATE UNIQUE (%s)-[:DIRECTED]->(movie)\n", safe(director.Name))
+				personMap[director.Id] = true
 			}
 		}
 	}
-	fmt.Println("RETURN movie.title;")
+}
+
+func (m MovieType) printActorsCSV(w *csv.Writer) {
+	if len(m.ReleaseDate) < 4 {
+		return
+	}
+	for _, a := range m.Casts.Cast {
+		actor := getPerson(a.Id)
+		if len(actor.Name) > 0 && len(actor.Birthday) > 4 && len(strings.Trim(safe(a.Name), "_")) > 0 {
+			record := []string{}
+			record = append(record, fmt.Sprintf("%d", actor.Id))
+			record = append(record, fmt.Sprintf("%d", m.Id))
+			record = append(record, makeCharsString(a.Character))
+			err := w.Write(record)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+}
+
+func (m MovieType) printDirectorsCSV(w *csv.Writer) {
+	if len(m.ReleaseDate) < 4 {
+		return
+	}
+	for _, d := range m.Casts.Crew {
+		if d.Job == "Director" {
+			director := getPerson(d.Id)
+			record := []string{}
+			record = append(record, fmt.Sprintf("%d", director.Id))
+			record = append(record, fmt.Sprintf("%d", m.Id))
+			err := w.Write(record)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
 }
 
 // get this URL from our cache or call the API and cache the response
@@ -246,7 +276,7 @@ func getMovie(m int64) MovieType {
 }
 
 // the discover API call (recursive)
-func discoverMovies(pageNum int64) {
+func discoverMovies(pageNum int64, moviesC *csv.Writer, peopleC *csv.Writer, actorsC *csv.Writer, directorsC *csv.Writer) {
 	url := fmt.Sprintf("http://api.themoviedb.org/3/discover/movie?page=%d&api_key=%s&&vote_count.gte=%d",
 		pageNum, *apikey, *votecount)
 	body := getCacheOrRequest(url)
@@ -255,11 +285,14 @@ func discoverMovies(pageNum int64) {
 	for _, movie := range page.Results {
 		m := getMovie(movie.Id)
 		if len(m.Casts.Cast) > 0 && len(m.Casts.Crew) > 0 {
-			m.printMovieCypher()
+			m.printMovieCSV(moviesC)
+			m.printPeopleCSV(peopleC)
+			m.printActorsCSV(actorsC)
+			m.printDirectorsCSV(directorsC)
 		}
 	}
 	if pageNum < page.TotalPages {
-		discoverMovies(pageNum + 1)
+		discoverMovies(pageNum+1, moviesC, peopleC, actorsC, directorsC)
 	}
 }
 
@@ -274,9 +307,68 @@ func main() {
 	delay, _ = time.ParseDuration(fmt.Sprintf("%dms", *delayFlag))
 	os.Mkdir("cache", 0755)
 	os.Chdir("cache")
-	// fmt.Println("CREATE CONSTRAINT on (m:Movie) ASSERT m.id IS UNIQUE;")
-	fmt.Println("CREATE INDEX on :Movie(title);")
-	//	fmt.Println("CREATE CONSTRAINT on (p:Person) ASSERT p.id IS UNIQUE;")
-	fmt.Println("CREATE INDEX on :Person(name);")
-	discoverMovies(1)
+	f, err := os.Create("movies.csv")
+	defer f.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	moviesC := csv.NewWriter(f)
+	record := []string{}
+	record = append(record, "movieId")
+	record = append(record, "title")
+	record = append(record, "avgVote")
+	record = append(record, "releaseYear")
+	record = append(record, "tagline")
+	record = append(record, "genres")
+	err = moviesC.Write(record)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f2, err := os.Create("people.csv")
+	defer f2.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	peopleC := csv.NewWriter(f2)
+	record = []string{}
+	record = append(record, "personId")
+	record = append(record, "name")
+	record = append(record, "birthYear")
+	record = append(record, "deathYear")
+	err = peopleC.Write(record)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f3, err := os.Create("actors.csv")
+	defer f3.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	actorsC := csv.NewWriter(f3)
+	record = []string{}
+	record = append(record, "personId")
+	record = append(record, "movieId")
+	record = append(record, "characters")
+	err = actorsC.Write(record)
+	if err != nil {
+		log.Fatal(err)
+	}
+	f4, err := os.Create("directors.csv")
+	defer f4.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	directorsC := csv.NewWriter(f4)
+	record = []string{}
+	record = append(record, "personId")
+	record = append(record, "movieId")
+	err = directorsC.Write(record)
+	if err != nil {
+		log.Fatal(err)
+	}
+	discoverMovies(1, moviesC, peopleC, actorsC, directorsC)
+	moviesC.Flush()
+	peopleC.Flush()
+	actorsC.Flush()
+	directorsC.Flush()
 }
